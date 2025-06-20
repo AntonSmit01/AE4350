@@ -1,0 +1,53 @@
+### Openings strategien // Opening strategies ###
+1a. Altijd eerst lage kaarten wegspelen // Play low cards first
+
+1b. Altijd eerst hoge kaarten spelen // Play high cards first
+
+1c. Altijd eerst hoge kaarten van dezelfde soort wegspelen // Play high cards from the same suit first
+
+1d. Altijd dezelfde soort eerst spelen // Play all the same suit first (3 hearts, 1 club: play the 3 hearts if possible)
+
+1e. Altijd de ene aparte soort spelen // Play the most of 1 suit that is in hand first (for example 2 hearts, 1 club, 1 spade : play 2 hearts)
+
+
+### Vuile was strategien // Vuile was strategies ###
+
+2a. Altijd vuile was checken // Always check vuile was
+
+2b. Nooit vuile was checken // Never check vuile was
+
+2c. Slechte kaarten (maar geen vuile was) alsnog vuile was bluffen // With bad cards, but no 'vuile was', try to bluff
+
+2d. Niet bluffen // Never bluff
+
+
+### Eind strategien // Ending strategies ###
+
+3a. Met een boer proberen te eindigen // Try to end on a Jack (for double points)
+
+3b. Met de hoogste kaart eindigen // End with the highest card (Not compatible with 1b or 1c)
+
+
+### Bluf strategien? // Bluff strategies ### (als een speler sowieso gaat verliezen, maar toch probeert een kaart te bluffen)
+
+4a. Bluf met toepen // Bluff with toepen
+
+4b. 
+
+
+### Toep strategien // Toep strategies###
+
+5a. Wanneer je een 10 en een 9 of hoger  over hebt, altijd toepen // When you have a 10 and 9 or higher left, always toep
+
+5b. Wanneer je de laatste slag sowieso wint, altijd toepen // When you are sure to win the last trick, always toep
+
+
+### Uitstap strategien // Fold strategies ###
+
+6a. Wanneer je allen maar een of meer Js over hebt als enige kaart, en het is niet jouw beurt, uitstappen // When you only have 1 or more Js, and it is not your turn, fold
+
+6b. Wanneer er getoept wordt, en je hebt 2 kaarten met K of lager, uitstappen // When someone toeps, and you only have 2 cards left, both K or lower, fold
+
+6c. Wanneer er getoept wordt, en je hebt 1 kaart over met een K of lager, uitstappen // When some toeps, and you have only 1 card left that is a K or lower, fold
+
+6d. Nooit uitstappen // Never fold
