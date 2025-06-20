@@ -13,6 +13,8 @@ players = create_players(4)
 print("\n--- Strategy Profiles ---")
 for player in players[1:]:  # Skip Player A for learning
     player.strategies = generate_random_strategy_profile()
+    #player.strategies["vuile_was"] = "bluff_with_3_figures_and_8"
+    #player.strategies["check"] = "always_check"
     print(f"{player.name}'s Strategy:")
     for key, value in player.strategies.items():
         print(f"  {key}: {value}")

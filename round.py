@@ -1,4 +1,5 @@
 import time
+from strategies import check_strategy
 
 class Round:
     def __init__(self, players, deck, previous_round_winner=None):
@@ -17,6 +18,10 @@ class Round:
             player.receive_hand(hand)
 
     def play_trick(self):
+        # Handle Vuile Was once per round (before first trick)
+        if len(self.trick_history) == 0:
+            self.handle_vuile_was_phase()
+
         # Determine start player (previous trick winner, or previous round winner if it's the first trick)
         if self.trick_winner:
             leader = self.trick_winner
@@ -41,13 +46,13 @@ class Round:
             if player.should_fold(self.round_value, current_turn_owner):
                 player.in_round = False
                 player.folded = True
-                print(f"❌ {player.name} folds and leaves the round.")
+                print(f" {player.name} folds and leaves the round.")
                 time.sleep(1)
                 continue
 
             # Toep logic
             if player.should_toep(self.round_value):
-                print(f"🔥 {player.name} toeps! Round value increases from {self.round_value} to {self.round_value + 1}.")
+                print(f" {player.name} toeps! Round value increases from {self.round_value} to {self.round_value + 1}.")
                 self.round_value += 1
                 time.sleep(1)
 
@@ -66,13 +71,14 @@ class Round:
         if valid_cards:
             winner = max(valid_cards, key=lambda x: x[1].value)
             self.trick_winner = winner[0]
-            print(f"🏆 {self.trick_winner.name} wins the trick!")
+            print(f" {self.trick_winner.name} wins the trick!")
         else:
             self.trick_winner = None
 
         self.trick_history.append((lead_suit, played_cards))
         time.sleep(1)  # Delay after trick
         return self.trick_winner
+
 
 
     def handle_fold(self, player):
@@ -142,61 +148,78 @@ class Round:
     def handle_vuile_was_phase(self):
         print("\n=== Vuile Was Phase ===\n")
         time.sleep(1)
-        
+
         players_calling = []
 
+        # Step 1: Collect players declaring vuile was
         for player in self.active_players:
             if player.declare_vuile_was():
                 print(f"{player.name} calls **VUILE WAS**!")
-                time.sleep(1)
+                player.declared_vuile_was = True
                 players_calling.append(player)
+                time.sleep(1)
 
         if not players_calling:
-            print("No players called vuile was.\n")
-            time.sleep(1)
-            return True  # Continue with the round
-
-        for player in players_calling:
-            print(f"\nChecking {player.name}'s vuile was claim...")
-            time.sleep(1)
-
-            # All others check the vuile was claim
-            challengers = [p for p in self.active_players if p != player]
-            for ch in challengers:
-                print(f"{ch.name} is checking {player.name}'s vuile was.")
+                print("No players called vuile was.\n")
                 time.sleep(1)
+                return True
 
-            is_real = player.has_real_vuile_was()
+        # Step 2: Let others decide whether to check
+        for caller in players_calling:
+            is_real = caller.has_real_vuile_was()
+            #print(f"Is real = {is_real}")
+            checked = False
+            successful_checks = []
 
+            print(f"\nChecking {caller.name}'s vuile was claim...")
+
+            for p in self.active_players:
+                if p == caller or not p.in_round:
+                    continue
+
+                if check_strategy(p):
+                    print(f"{p.name} checks {caller.name}'s vuile was declaration...")
+                    time.sleep(1)
+
+                    if is_real:
+                        #print(f"{caller.name} had a valid Vuile Was.")
+                        successful_checks.append(p)
+                    else:
+                        print(f"{caller.name} **bluffed!**")
+                        print(f"{caller.name} will play with open cards. The cards are: {caller.hand}")
+                        caller.play_open = True
+                        successful_checks.append(p)
+                        checked = True
+                        break  # Stop checking once bluff is caught
+                else:
+                    print(f"{p.name} trusts {caller.name}'s vuile was and does not check.")
+                    time.sleep(1)
+
+            # Step 3: Apply consequences
             if is_real:
-                print(f"\n{player.name} **had a valid vuile was**!")
-                time.sleep(1)
-
-                # Burn old hand
-                self.deck.cards.extend(player.hand)
-                player.hand = []
+                print(f"\n{caller.name} had a **real vuile was** with {caller.hand}.")
+                self.deck.cards.extend(caller.hand)
+                caller.hand = []
 
                 if len(self.deck.cards) < 4:
-                    print("Not enough cards in the deck to deal a new hand.")
-                    return False  # Ends the game
+                    print("Not enough cards left to deal a new hand.")
+                    return False
 
-                # Give new hand
                 for _ in range(4):
-                    player.hand.append(self.deck.cards.pop())
-                print(f"{player.name} receives a new hand.\n")
+                    caller.hand.append(self.deck.cards.pop())
+                print(f"{caller.name} receives a new hand.")
                 time.sleep(1)
 
-                # Challengers gain points
-                for ch in challengers:
-                    ch.points += 1
-                    print(f"{ch.name} gains 1 point for checking correct Vuile Was.")
+                for p in successful_checks:
+                    p.points += 1
+                    print(f"{p.name} gains 1 point for correctly checking Vuile Was.")
                     time.sleep(1)
-            else:
-                print(f"\n{player.name} **bluffed!**")
-                print(f"{player.name} will play this round with open cards.")
-                player.play_open = True
+            elif not checked:
+                print(f"\n{caller.name}'s **bluff was not caught!** No one checked.")
                 time.sleep(1)
 
         print("\n=== End of Vuile Was Phase ===\n")
         time.sleep(1)
-        return True  # Continue game
+        return True
+
+

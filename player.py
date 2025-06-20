@@ -84,8 +84,10 @@ class Player:
         figure_values = ["J", "Q", "K", "A"]
         figures = [card for card in self.hand if card.rank['rank'] in figure_values]
         sevens = [card for card in self.hand if card.rank['rank'] == "7"]
-        return (len(figures) == 4) or (len(figures) == 3 and len(sevens) == 1)
+        eights = [card for card in self.hand if card.rank['rank'] == "8"]
+        return (len(figures) == 4) or (len(figures) == 3 and len(sevens) == 1) #or (len(figures) == 3 and len(eights) == 1) or (len(figures) == 2 and len(sevens) == 1 and len(eights) == 1)
 
     def declare_vuile_was(self):
+        decide = vuile_was_strategy(self)
         """Decide whether to call Vuile Was (real or bluff)."""
-        return vuile_was_strategy(self)
+        return decide

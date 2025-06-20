@@ -42,19 +42,41 @@ def vuile_was_strategy(player):
     strat = player.strategies.get("vuile_was", "no_bluff")
 
     has_vw = player.has_real_vuile_was()
+    #print(f"{player.name} attempting vuile was: has_real={has_vw}, strategy={strat}, hand={player.hand}")
 
     if has_vw:
+        #print(f"{player.name} declares real Vuile Was.")
         return True
 
-    # Handle bluffing
-    if strat == "always_bluff":
-        return True
-    elif strat == "bluff_with_3_figures_and_8":
-        fig_count = sum(1 for c in player.hand if c.rank in ["J", "Q", "K", "A"])
-        has_8 = any(c.rank == "8" for c in player.hand)
-        return fig_count == 3 and has_8
-    else:
-        return False
+    if strat == "bluff_with_3_figures_and_8":
+        # Extract rank strings from the dicts
+        ranks = [c.rank["rank"] for c in player.hand]
+
+        fig_count = sum(1 for r in ranks if r in ["J", "Q", "K", "A"])
+        seven_count = ranks.count("7")
+        eight_count = ranks.count("8")
+        nine_count = ranks.count("9")
+        
+
+        #print(f"{player.name} has {fig_count} figures, {seven_count} 7s, {eight_count} 8s, and {nine_count} 9s.")
+
+        if fig_count == 3 and eight_count >= 1:
+            #print(f"{player.name} bluffs with 3 figures + 8")
+            return True
+
+        elif fig_count == 2 and seven_count == 1 and eight_count >= 1:
+            #print(f"{player.name} bluffs with 2 figures + 7 + 8")
+            return True
+        
+        elif fig_count == 2 and seven_count == 2:
+            #print(f"{player.name} bluffs with 2 figures + 2 7s ")
+            return True
+
+    return False
+
+
+
+
 
 
 # 3. Toep Strategy
@@ -93,6 +115,21 @@ def fold_strategy(player, round_value, current_turn_owner):
         return False
 
 
+# 5. Check Vuile Was Strategy
+def check_strategy(player):
+    strat = player.strategies.get("check", "always_check")
+
+    if strat == "always_check":
+        if player.points >= 12:
+            return False
+        else:
+            return True
+    elif strat == "never_check":
+        return False
+    else:
+        return True  # default fallback
+
+
 # Helper
 def count_suits(cards):
     suits = {}
@@ -112,7 +149,6 @@ STRATEGY_POOL = {
     ],
     "vuile_was": [
         "no_bluff",
-        "always_bluff",
         "bluff_with_3_figures_and_8"
     ],
     "toep": [
@@ -125,6 +161,10 @@ STRATEGY_POOL = {
         "fold_with_only_Js",
         "2_cards_below_K",
         "1_card_below_K"
+    ],
+    "check": [
+        "always_check",
+        "never_check"
     ]
 }
 
