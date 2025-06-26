@@ -6,6 +6,7 @@ from strategies import (
     fold_strategy,
     generate_random_strategy_profile
 )
+from policies import RandomPolicy
 
 class Player:
     def __init__(self, name):
@@ -17,6 +18,7 @@ class Player:
         self.has_folded = False     # Check if player has folded
         self.play_open = False      # Check if player start with open cards
         self.strategies = {}        # Used strategy
+        self.folded_at_value = None
 
     def receive_hand(self, cards):
         self.hand = cards
@@ -91,3 +93,65 @@ class Player:
         decide = vuile_was_strategy(self)
         """Decide whether to call Vuile Was (real or bluff)."""
         return decide
+
+### Create the Reinforced Learning Player ###
+class RLPlayer(Player):
+    def __init__(self, name="RLPlayer", model=None):
+        super().__init__(name=name)
+        self.model = model or RandomPolicy()
+
+    def get_observation(self, phase, context):
+        trick_history = context.get("trick_history", [])
+        round_value = context.get("round_value", 1)
+        players = context.get("players", [])
+
+        played_cards = []
+        for _, trick in trick_history:
+            played_cards.extend([(p.name, c.rank['rank'], c.suit) for p, c in trick])
+
+        return {
+            "phase": phase,
+            "points": self.points,
+            "hand": [(c.rank['rank'], c.suit) for c in self.hand],
+            "open_cards": self.play_open,
+            "round_value": round_value,
+            "num_figures": sum(c.rank['rank'] in ['J', 'Q', 'K', 'A'] for c in self.hand),
+            "num_7s": sum(c.rank['rank'] == '7' for c in self.hand),
+            "num_8s": sum(c.rank['rank'] == '8' for c in self.hand),
+            "num_9s": sum(c.rank['rank'] == '9' for c in self.hand),
+            "played_cards": played_cards,
+            "num_other_players": len(players) - 1 if players else 3
+        }
+
+    def declare_vuile_was(self, context=None):
+        obs = self.get_observation("vuile_was_declaration", context or {})
+        print(f"[{self.name}] Observation for Vuile Was: {obs}")
+        return self.model.predict(obs, ["yes", "no"]) == "yes"
+
+    def play_card(self, lead_suit=None, context=None):
+        obs = self.get_observation("play_card", context or {})
+        print(f"[{self.name}] Observation for play_card: {obs}")
+        legal_cards = self.get_legal_cards(lead_suit)
+        if not legal_cards:
+            return None
+        chosen = self.model.predict(obs, legal_cards)
+        self.hand.remove(chosen)
+        print(f"{self.name} plays {chosen}")
+        return chosen
+
+    def get_legal_cards(self, lead_suit):
+        if not self.hand:
+            return []
+        if not lead_suit:
+            return self.hand.copy()
+        matching = [c for c in self.hand if c.suit == lead_suit]
+        return matching if matching else self.hand.copy()
+
+    def should_fold(self, round_value, current_player):
+        obs = self.get_observation("fold", {})
+        return self.model.predict(obs, ["yes", "no"]) == "yes"
+
+    def should_toep(self, round_value):
+        obs = self.get_observation("toep", {})
+        return self.model.predict(obs, ["yes", "no"]) == "yes"
+

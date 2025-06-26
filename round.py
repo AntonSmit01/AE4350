@@ -1,5 +1,14 @@
 import time
 from strategies import check_strategy
+from player import RLPlayer
+from policies import MyPolicy
+
+players = [
+    RLPlayer("Bot1", model=MyPolicy()),
+    RLPlayer("Bot2", model=MyPolicy()),
+    RLPlayer("Bot3", model=MyPolicy()),
+    RLPlayer("Bot4", model=MyPolicy()),
+]
 
 class Round:
     def __init__(self, players, deck, previous_round_winner=None):
@@ -20,9 +29,14 @@ class Round:
     def play_trick(self):
         # Handle Vuile Was once per round (before first trick)
         if len(self.trick_history) == 0:
+            context = {
+                "trick_history": self.trick_history,
+                "round_value": self.round_value,
+                "players": self.players,
+            }
             self.handle_vuile_was_phase()
 
-        # Determine start player (previous trick winner, or previous round winner if it's the first trick)
+        # Determine starting player
         if self.trick_winner:
             leader = self.trick_winner
         elif self.previous_round_winner:
@@ -30,55 +44,70 @@ class Round:
         else:
             leader = self.active_players[0]  # Fallback
 
-        # Rotate player order so leader goes first
+        # Rotate player order so leader starts first
         start_index = self.active_players.index(leader)
         ordered_players = self.active_players[start_index:] + self.active_players[:start_index]
 
         played_cards = []
         lead_suit = None
-        current_turn_owner = leader.name  # For fold strategy logic
+        current_turn_owner = leader.name  # Used for fold logic
 
         for i, player in enumerate(ordered_players):
             if not player.in_round:
                 continue
 
-            # Fold logic
-            if player.should_fold(self.round_value, current_turn_owner):
+            # FOLD LOGIC
+            if i != 0 and player.should_fold(self.round_value, current_turn_owner):
                 player.in_round = False
-                player.folded = True
-                print(f" {player.name} folds and leaves the round.")
+                player.has_folded = True
+                player.folded_at_value = self.round_value  # ✅ Record when they folded
+                print(f" {player.name} folds and leaves the round at {self.round_value} points.")
                 time.sleep(1)
                 continue
 
-            # Toep logic
+            # TOEP LOGIC
             if player.should_toep(self.round_value):
                 print(f" {player.name} toeps! Round value increases from {self.round_value} to {self.round_value + 1}.")
                 self.round_value += 1
                 time.sleep(1)
 
-            # Card play
-            if i == 0:
-                card = player.play_card_following_suit(None)
-                lead_suit = card.suit
-            else:
-                card = player.play_card_following_suit(lead_suit)
+            # Prepare context (for RLPlayer)
+            context = {
+                "trick_history": self.trick_history,
+                "round_value": self.round_value,
+                "players": self.players,
+            }
 
-            played_cards.append((player, card))
-            time.sleep(0.5)  # Delay between each play
+            # CARD PLAY
+            card = player.play_card(lead_suit=lead_suit)#, context=context)
 
-        # Determine winner among players who followed suit
+            if i == 0 and card:
+                lead_suit = card.suit  # First card defines the suit
+
+            if card:
+                played_cards.append((player, card))
+            time.sleep(0.5)
+
+        # SAFETY CHECK — no cards played
+        if not played_cards:
+            print("⚠️ No cards were played this trick (all remaining players folded).")
+            self.trick_winner = None
+            return None
+
+        print(f"🃏 Played cards: {[f'{p.name}: {c}' for p, c in played_cards]}")
+
+        # Determine trick winner based on lead suit
         valid_cards = [(p, c) for p, c in played_cards if c.suit == lead_suit]
         if valid_cards:
             winner = max(valid_cards, key=lambda x: x[1].value)
             self.trick_winner = winner[0]
-            print(f" {self.trick_winner.name} wins the trick!")
+            print(f"🏆 {self.trick_winner.name} wins the trick!")
         else:
             self.trick_winner = None
 
         self.trick_history.append((lead_suit, played_cards))
-        time.sleep(1)  # Delay after trick
+        time.sleep(1)
         return self.trick_winner
-
 
 
     def handle_fold(self, player):
@@ -88,13 +117,15 @@ class Round:
     def apply_end_of_round_scoring(self):
         for player in self.active_players:
             if player.has_folded:
-                player.points += self.round_value
-                print(f"{player.name} folded and gets {self.round_value} points, {player.name} now has {player.points}.")
+                folded_value = player.folded_at_value or self.round_value
+                player.points += folded_value
+                print(f"{player.name} folded and gets {folded_value} points, now has {player.points}.")
             elif player != self.trick_winner:
                 player.points += self.round_value
-                print(f"{player.name} loses round and gets {self.round_value} points, {player.name} now has {player.points}.")
+                print(f"{player.name} loses round and gets {self.round_value} points, now has {player.points}.")
             else:
-                print(f"{player.name} wins the round and gets 0 points, {player.name} now has {player.points}.")
+                print(f"{player.name} wins the round and gets 0 points, now has {player.points}.")
+
 
     def check_for_game_end(self):
         for player in self.players:

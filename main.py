@@ -3,11 +3,21 @@
 from deck import Deck
 from helper import create_players
 from round import Round
-from strategies import generate_random_strategy_profile  # <-- new import
+from strategies import generate_random_strategy_profile
+from player import Player, RLPlayer
+from policies import RandomPolicy  # Create this if needed
 import time
 
 # Create players
-players = create_players(4)
+# RLPlayer as Player A
+player_a = RLPlayer(name="Player A", model=RandomPolicy())
+
+# Regular players B, C, D
+player_b = Player("Player B")
+player_c = Player("Player C")
+player_d = Player("Player D")
+
+players = [player_a, player_b, player_c, player_d]
 
 # Assign and print strategies (except Player A)
 print("\n--- Strategy Profiles ---")
