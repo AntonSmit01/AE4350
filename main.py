@@ -5,12 +5,16 @@ from helper import create_players
 from round import Round
 from strategies import generate_random_strategy_profile
 from player import Player, RLPlayer
-from policies import RandomPolicy  # Create this if needed
+from policies import NeuralQLearningPolicy, ActionEncoder
 import time
+import pickle
+
+encoder = ActionEncoder()
+policy = NeuralQLearningPolicy(action_encoder=encoder)
 
 # Create players
 # RLPlayer as Player A
-player_a = RLPlayer(name="Player A", model=RandomPolicy())
+player_a = RLPlayer(name="Player A", model=policy)
 
 # Regular players B, C, D
 player_b = Player("Player B")
@@ -35,6 +39,9 @@ input("Press enter to continue.")
 # Player A gets a blank strategy (or learning hook)
 players[0].strategies = {}  # Leave empty or fill with RL placeholder if needed
 
+if isinstance(players[0], RLPlayer):
+    players[0].model.load_experience("experience.pkl")
+
 previous_round_winner = None
 
 # Main game loop
@@ -50,9 +57,33 @@ while True:
 
     round_instance.apply_end_of_round_scoring()
 
+    # TRAIN RL PLAYER HERE
+    for player in players:
+        if isinstance(player, RLPlayer):
+            print(f"📚 Training {player.name} in round...")
+            player.model.train_from_buffer(player.experience_buffer)
+            player.experience_buffer.clear()
+
     if round_instance.check_for_game_end():
-        print("🎉 Game over!")
+        print(" Game over!")
+    
+        for player in players:
+            if isinstance(player, RLPlayer):
+                player.games_played += 1
+                if player.points < 15:
+                    player.wins += 1
+                else:
+                    player.losses += 1
+
+                print(f" {player.name} - Games: {player.games_played}, Wins: {player.wins}, Losses: {player.losses}")
+
+                # Train
+                player.model.train_from_buffer(player.experience_buffer)
+                player.experience_buffer.clear()
+                player.model.save_experience("rl_experience.pkl")
+
         break
+
 
     # Set starter for next round
     previous_round_winner = round_instance.trick_winner
@@ -61,45 +92,3 @@ while True:
 
 
 
-
-## Pseudo Code ##
-
-### This is the main file where you can play the game ###
-
-## Pseudo Code ##
-
-# 1. Initialize game
-    # create_deck() -> list of cards
-    # create_players(num_players=4) -> list of Player objects
-
-# 2. Shuffle and deal cards to each player
-
-# 3. Optionally: check 'vuile was'
-    # if all players agree: allow card exchange
-
-# 4. Loop over rounds
-    # For each trick (4 per round):
-        # Players play a card in order
-        # Track trick winner
-    # Determine round winner
-
-# 5. Handle 'toep' (raising)
-    # Players can choose to raise
-    # Other players decide to follow or fold
-    # Update lives or points accordingly
-
-# 6. Update game state
-    # track lives / remaining players
-
-# 7. Repeat until game ends (1 player left or a max score/loss reached)
-
-# 8. Integrate RL agent (Player A)
-    # Observe state
-    # Choose action
-    # Receive reward
-    # Train/update policy or Q-values
-
-
-# Use a point tracker to keep data (per round, but also in total to see if Player A is learning)
-
-# First make sure the game works first, after this the RL algorythm comes into play

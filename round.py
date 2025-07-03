@@ -116,15 +116,24 @@ class Round:
 
     def apply_end_of_round_scoring(self):
         for player in self.active_players:
+            reward = 0
             if player.has_folded:
                 folded_value = player.folded_at_value or self.round_value
                 player.points += folded_value
                 print(f"{player.name} folded and gets {folded_value} points, now has {player.points}.")
+                reward = -0.5
             elif player != self.trick_winner:
                 player.points += self.round_value
                 print(f"{player.name} loses round and gets {self.round_value} points, now has {player.points}.")
+                reward = -1
             else:
                 print(f"{player.name} wins the round and gets 0 points, now has {player.points}.")
+                reward = 1
+            # Deliver reward if RLPlayer
+            if isinstance(player, RLPlayer):
+                done = player.points >= 15
+                player.receive_reward(reward, done)
+
 
 
     def check_for_game_end(self):
@@ -243,7 +252,7 @@ class Round:
 
                 for p in successful_checks:
                     p.points += 1
-                    print(f"{p.name} gains 1 point for correctly checking Vuile Was.")
+                    print(f"{p.name} gains 1 point for checking a correct Vuile Was.")
                     time.sleep(1)
             elif not checked:
                 print(f"\n{caller.name}'s **bluff was not caught!** No one checked.")

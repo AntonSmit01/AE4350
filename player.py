@@ -6,7 +6,7 @@ from strategies import (
     fold_strategy,
     generate_random_strategy_profile
 )
-from policies import RandomPolicy
+from policies import NeuralQLearningPolicy
 
 class Player:
     def __init__(self, name):
@@ -96,9 +96,26 @@ class Player:
 
 ### Create the Reinforced Learning Player ###
 class RLPlayer(Player):
-    def __init__(self, name="RLPlayer", model=None):
+    def __init__(self, name="RLPlayer", model=NeuralQLearningPolicy):
         super().__init__(name=name)
-        self.model = model or RandomPolicy()
+        self.model = model #or NeurPolicy()
+        self.experience_buffer = []  # stores (obs, action, reward, next_obs, done)
+        self.last_obs = None
+        self.last_action = None
+        self.wins = 0
+        self.losses = 0
+        self.games_played = 0
+        self.card_model = NeuralQLearningPolicy("card_model.pt")
+        self.vw_model = NeuralQLearningPolicy("vuile_was_model.pt")
+        self.fold_model = NeuralQLearningPolicy("fold_model.pt")
+        self.toep_model = NeuralQLearningPolicy("toep_model.pt")
+
+        self.experience_buffers = {
+            "play_card": [],
+            "vuile_was": [],
+            "fold": [],
+            "toep": [],
+        }
 
     def get_observation(self, phase, context):
         trick_history = context.get("trick_history", [])
@@ -125,8 +142,13 @@ class RLPlayer(Player):
 
     def declare_vuile_was(self, context=None):
         obs = self.get_observation("vuile_was_declaration", context or {})
-        print(f"[{self.name}] Observation for Vuile Was: {obs}")
-        return self.model.predict(obs, ["yes", "no"]) == "yes"
+        action = self.model.predict(obs, action_space=["yes", "no"])
+        
+        # Store observation and action for training
+        self.last_obs = obs
+        self.last_action = action
+        return action == "yes"
+
 
     def play_card(self, lead_suit=None, context=None):
         obs = self.get_observation("play_card", context or {})
@@ -134,10 +156,15 @@ class RLPlayer(Player):
         legal_cards = self.get_legal_cards(lead_suit)
         if not legal_cards:
             return None
-        chosen = self.model.predict(obs, legal_cards)
-        self.hand.remove(chosen)
-        print(f"{self.name} plays {chosen}")
-        return chosen
+
+        action = self.model.predict(obs, action_space=legal_cards)
+        self.last_obs = obs
+        self.last_action = action
+
+        self.hand.remove(action)
+        print(f"{self.name} plays {action}")
+        return action
+
 
     def get_legal_cards(self, lead_suit):
         if not self.hand:
@@ -155,3 +182,20 @@ class RLPlayer(Player):
         obs = self.get_observation("toep", {})
         return self.model.predict(obs, ["yes", "no"]) == "yes"
 
+    def receive_reward(self, reward, done):
+        if self.last_obs is None or self.last_action is None:
+            return  # No decision was made
+
+        next_obs = None  # You could save the next obs if training step-by-step
+        self.experience_buffer.append((self.last_obs, self.last_action, reward, next_obs, done))
+
+        self.last_obs = None
+        self.last_action = None
+
+    def calculate_reward(player, round_winner):
+        if player == round_winner:
+            return +1
+        elif player.has_folded:
+            return 0  # Or -0.5 if you want to discourage folding
+        else:
+            return -1
