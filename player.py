@@ -6,7 +6,7 @@ from strategies import (
     fold_strategy,
     generate_random_strategy_profile
 )
-from policies import NeuralQLearningPolicy
+from policies import NeuralQLearningPolicy, ActionEncoder
 
 class Player:
     def __init__(self, name):
@@ -19,6 +19,9 @@ class Player:
         self.play_open = False      # Check if player start with open cards
         self.strategies = {}        # Used strategy
         self.folded_at_value = None
+        self.declared_vuile_was = False
+        self.toeped = False
+        self.is_learning = False
 
     def receive_hand(self, cards):
         self.hand = cards
@@ -26,6 +29,10 @@ class Player:
 
     def assign_random_strategies(self):
         self.strategies = generate_random_strategy_profile()
+
+    def assign_strategy(self, profile):
+        """Assign a fixed strategy profile to the player."""
+        self.strategies = profile
 
     def fold(self, round_value):
         """Player folds and takes the current round points."""
@@ -98,74 +105,113 @@ class Player:
 class RLPlayer(Player):
     def __init__(self, name="RLPlayer", model=NeuralQLearningPolicy):
         super().__init__(name=name)
-        self.model = model #or NeurPolicy()
-        self.experience_buffer = []  # stores (obs, action, reward, next_obs, done)
-        self.last_obs = None
-        self.last_action = None
-        self.wins = 0
-        self.losses = 0
-        self.games_played = 0
-        self.card_model = NeuralQLearningPolicy("card_model.pt")
-        self.vw_model = NeuralQLearningPolicy("vuile_was_model.pt")
-        self.fold_model = NeuralQLearningPolicy("fold_model.pt")
-        self.toep_model = NeuralQLearningPolicy("toep_model.pt")
+        # RL models for each phase
+        self.card_model = NeuralQLearningPolicy(ActionEncoder([0, 1, 2, 3]))
+        self.vw_model = NeuralQLearningPolicy(ActionEncoder([0, 1]))  # 0=no, 1=yes
+        self.toep_model = NeuralQLearningPolicy(ActionEncoder([0, 1]))  # 0=no, 1=yes
+        self.fold_model = NeuralQLearningPolicy(ActionEncoder([0, 1]))  # 0=no, 1=yes
 
         self.experience_buffers = {
             "play_card": [],
             "vuile_was": [],
             "fold": [],
             "toep": [],
+            "check": []
         }
+        self.model = model
+        self.last_obs = None
+        self.last_action = None
+        self.wins = 0
+        self.losses = 0
+        self.games_played = 0
+        self.declared_vuile_was = False  # ensure attribute exists
+        self.is_learning = True
 
+    # --- Observation ---
     def get_observation(self, phase, context):
         trick_history = context.get("trick_history", [])
         round_value = context.get("round_value", 1)
         players = context.get("players", [])
-
-        played_cards = []
-        for _, trick in trick_history:
-            played_cards.extend([(p.name, c.rank['rank'], c.suit) for p, c in trick])
-
+        played_cards = [(p.name, c.rank['rank'], c.suit) for t, trick in trick_history for p, c in trick]
         return {
             "phase": phase,
             "points": self.points,
             "hand": [(c.rank['rank'], c.suit) for c in self.hand],
             "open_cards": self.play_open,
             "round_value": round_value,
-            "num_figures": sum(c.rank['rank'] in ['J', 'Q', 'K', 'A'] for c in self.hand),
-            "num_7s": sum(c.rank['rank'] == '7' for c in self.hand),
-            "num_8s": sum(c.rank['rank'] == '8' for c in self.hand),
-            "num_9s": sum(c.rank['rank'] == '9' for c in self.hand),
+            "num_figures": sum(c.rank['rank'] in ['J','Q','K','A'] for c in self.hand),
+            "num_7s": sum(c.rank['rank']=='7' for c in self.hand),
+            "num_8s": sum(c.rank['rank']=='8' for c in self.hand),
+            "num_9s": sum(c.rank['rank']=='9' for c in self.hand),
             "played_cards": played_cards,
             "num_other_players": len(players) - 1 if players else 3
         }
 
+    # --- Vuile Was ---
     def declare_vuile_was(self, context=None):
         obs = self.get_observation("vuile_was_declaration", context or {})
-        action = self.model.predict(obs, action_space=["yes", "no"])
-        
-        # Store observation and action for training
+        action_index = self.vw_model.predict(obs, [0, 1])  # 0=no, 1=yes
+        self.experience_buffers["vuile_was"].append((obs, action_index, 0, None, False))
         self.last_obs = obs
-        self.last_action = action
-        return action == "yes"
+        self.last_action = action_index
+        self.declared_vuile_was = action_index == 1
+        return self.declared_vuile_was
 
-
+    # --- Card play ---
     def play_card(self, lead_suit=None, context=None):
         obs = self.get_observation("play_card", context or {})
-        print(f"[{self.name}] Observation for play_card: {obs}")
         legal_cards = self.get_legal_cards(lead_suit)
         if not legal_cards:
             return None
 
-        action = self.model.predict(obs, action_space=legal_cards)
+        # Use indices for RL
+        action_index = self.card_model.predict(obs, list(range(len(legal_cards))))
+        chosen_card = legal_cards[action_index]
+
+        self.experience_buffers["play_card"].append((obs, action_index, 0, None, False))
         self.last_obs = obs
-        self.last_action = action
+        self.last_action = action_index
 
-        self.hand.remove(action)
-        print(f"{self.name} plays {action}")
-        return action
+        self.hand.remove(chosen_card)
+        print(f"{self.name} plays {chosen_card}")
+        return chosen_card
 
+    # --- Fold ---
+    def should_fold(self, round_value, current_player=None):
+        obs = self.get_observation("fold", {"round_value": round_value})
+        action_index = self.fold_model.predict(obs, [0, 1])
+        self.experience_buffers["fold"].append((obs, action_index, 0, None, False))
+        return action_index == 1
 
+    # --- Toep ---
+    def should_toep(self, round_value):
+        obs = self.get_observation("toep", {"round_value": round_value})
+        action_index = self.toep_model.predict(obs, [0, 1])
+        self.experience_buffers["toep"].append((obs, action_index, 0, None, False))
+        return action_index == 1
+    
+    # --- Vuile was Check ---
+    def decide_check(self, obs, context=None):
+        action_space = ["check", "no_check"]
+        action_index = self.check_model.predict(obs, action_space)
+
+        # Store the experience (obs, action, reward, next_obs, done)
+        self.experience_buffers["check"].append((obs, action_space[action_index], 0, None, False))
+
+        self.last_obs = obs
+        self.last_action = action_space[action_index]
+        return action_space[action_index] == "check"
+
+    # --- Reward assignment ---
+    def receive_reward(self, reward, done):
+        if self.last_obs is None or self.last_action is None:
+            return
+        next_obs = None
+        self.experience_buffers["play_card"].append((self.last_obs, self.last_action, reward, next_obs, done))
+        self.last_obs = None
+        self.last_action = None
+
+    # --- Legal cards helper ---
     def get_legal_cards(self, lead_suit):
         if not self.hand:
             return []
@@ -174,28 +220,14 @@ class RLPlayer(Player):
         matching = [c for c in self.hand if c.suit == lead_suit]
         return matching if matching else self.hand.copy()
 
-    def should_fold(self, round_value, current_player):
-        obs = self.get_observation("fold", {})
-        return self.model.predict(obs, ["yes", "no"]) == "yes"
-
-    def should_toep(self, round_value):
-        obs = self.get_observation("toep", {})
-        return self.model.predict(obs, ["yes", "no"]) == "yes"
-
-    def receive_reward(self, reward, done):
-        if self.last_obs is None or self.last_action is None:
-            return  # No decision was made
-
-        next_obs = None  # You could save the next obs if training step-by-step
-        self.experience_buffer.append((self.last_obs, self.last_action, reward, next_obs, done))
-
+    def reset_for_new_round(self):
+        """Clear stored experiences for the new round."""
+        self.experience_buffers = {
+            "play_card": [],
+            "vuile_was": [],
+            "fold": [],
+            "toep": [],
+            "check": []
+        }
         self.last_obs = None
         self.last_action = None
-
-    def calculate_reward(player, round_winner):
-        if player == round_winner:
-            return +1
-        elif player.has_folded:
-            return 0  # Or -0.5 if you want to discourage folding
-        else:
-            return -1

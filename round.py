@@ -3,12 +3,12 @@ from strategies import check_strategy
 from player import RLPlayer
 from policies import MyPolicy
 
-players = [
-    RLPlayer("Bot1", model=MyPolicy()),
-    RLPlayer("Bot2", model=MyPolicy()),
-    RLPlayer("Bot3", model=MyPolicy()),
-    RLPlayer("Bot4", model=MyPolicy()),
-]
+#players = [
+#    RLPlayer("Bot1", model=MyPolicy()),
+#    RLPlayer("Bot2", model=MyPolicy()),
+#  RLPlayer("Bot3", model=MyPolicy()),
+#  RLPlayer("Bot4", model=MyPolicy()),
+#]
 
 class Round:
     def __init__(self, players, deck, previous_round_winner=None):
@@ -60,7 +60,7 @@ class Round:
             if i != 0 and player.should_fold(self.round_value, current_turn_owner):
                 player.in_round = False
                 player.has_folded = True
-                player.folded_at_value = self.round_value  # ✅ Record when they folded
+                player.folded_at_value = self.round_value  # Record when they folded
                 print(f" {player.name} folds and leaves the round at {self.round_value} points.")
                 time.sleep(1)
                 continue
@@ -94,7 +94,7 @@ class Round:
             self.trick_winner = None
             return None
 
-        print(f"🃏 Played cards: {[f'{p.name}: {c}' for p, c in played_cards]}")
+        print(f"Played cards: {[f'{p.name}: {c}' for p, c in played_cards]}")
 
         # Determine trick winner based on lead suit
         valid_cards = [(p, c) for p, c in played_cards if c.suit == lead_suit]
@@ -121,18 +121,26 @@ class Round:
                 folded_value = player.folded_at_value or self.round_value
                 player.points += folded_value
                 print(f"{player.name} folded and gets {folded_value} points, now has {player.points}.")
-                reward = -0.5
+                reward = -2
             elif player != self.trick_winner:
                 player.points += self.round_value
                 print(f"{player.name} loses round and gets {self.round_value} points, now has {player.points}.")
                 reward = -1
             else:
                 print(f"{player.name} wins the round and gets 0 points, now has {player.points}.")
-                reward = 1
+                reward = 2
+
             # Deliver reward if RLPlayer
             if isinstance(player, RLPlayer):
                 done = player.points >= 15
                 player.receive_reward(reward, done)
+
+                # Train ONCE at end of round with all experiences
+                print(f"Training {player.name} on all phases...")
+                player.card_model.train_from_buffer(player.experience_buffers)
+
+                # Clear for next round
+                player.reset_for_new_round()
 
 
 
@@ -186,6 +194,11 @@ class Round:
 
 
     def handle_vuile_was_phase(self):
+        # Reset RL player(s) for a fresh round
+        for player in self.players:
+            if player.is_learning:   # mark Player A with is_learning=True
+                player.reset_for_new_round()
+
         print("\n=== Vuile Was Phase ===\n")
         time.sleep(1)
 
@@ -263,3 +276,32 @@ class Round:
         return True
 
 
+
+
+def calculate_phase_reward(phase, player, round_winner):
+    if phase == "play_card":
+        # Reward for winning the round
+        return 1.0 if player == round_winner else -1.0
+
+    elif phase == "vuile_was":
+        # Bluffing reward: negative if declared and lost, positive if succeeded
+        if player.declared_vuile_was and player == round_winner:
+            return 1.0
+        elif player.declared_vuile_was:
+            return -1.0
+        return 0.0
+
+    elif phase == "fold":
+        # Reward if folded before losing big points
+        if player.has_folded:
+            return -2 if player.points + player.folded_at_value < 15 else -1.0
+        else:
+            return 0.5 if player.points >= 15 else 0.1
+
+    elif phase == "toep":
+        # Reward if toep and win, penalty if toep and lose
+        if player.toep:
+            return 1.0 if player == round_winner else -1.0
+        return 0.0
+
+    return 0.0

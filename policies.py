@@ -28,15 +28,15 @@ class DebugPolicy:
     def save_experience(self, path="rl_experience.pkl"):
         with open(path, "wb") as f:
             pickle.dump(self.memory, f)
-        print(f"💾 Experience saved to {path}")
+        print(f"Experience saved to {path}")
 
     def load_experience(self, path="rl_experience.pkl"):
         try:
             with open(path, "rb") as f:
                 self.memory = pickle.load(f)
-            print(f"🧠 Experience loaded from {path}")
+            print(f"Experience loaded from {path}")
         except FileNotFoundError:
-            print("🧠 No previous experience found.")
+            print("No previous experience found.")
 
 
 ### Now the real policy ###
@@ -71,6 +71,7 @@ class NeuralQLearningPolicy:
         self.q_net = QNetwork(input_dim, action_encoder.num_actions)
         self.optimizer = optim.Adam(self.q_net.parameters(), lr=lr)
         self.loss_fn = nn.MSELoss()
+        #self.num_actions = len(action_encoder)
 
         self.memory = []  # For saving/reloading experience
 
@@ -95,12 +96,15 @@ class NeuralQLearningPolicy:
         with torch.no_grad():
             q_values = self.q_net(state).squeeze(0)
 
-        # Mask illegal actions
+        # Encode legal actions
         legal_ids = [self.action_encoder.encode(a) for a in action_space]
-        q_values_masked = torch.full_like(q_values, float('-inf'))
-        q_values_masked[legal_ids] = q_values[legal_ids]
+        legal_ids_tensor = torch.tensor(legal_ids, dtype=torch.long)
 
-        # Epsilon-greedy choice
+        # Mask illegal actions
+        q_values_masked = torch.full_like(q_values, float('-inf'))
+        q_values_masked[legal_ids_tensor] = q_values[legal_ids_tensor]
+
+        # Epsilon-greedy
         if random.random() < self.epsilon:
             chosen = random.choice(action_space)
         else:
@@ -109,8 +113,20 @@ class NeuralQLearningPolicy:
 
         return chosen
 
-    def train_from_buffer(self, buffer):
-        print("📚 Training on", len(buffer), "samples")
+
+    def train_from_buffer(self, buffer_or_dict):
+        # Case 1: dict of phase buffers
+        if isinstance(buffer_or_dict, dict):
+            for phase, buf in buffer_or_dict.items():
+                print(f"Training on phase {phase} with {len(buf)} samples")
+                self._train_on_list(buf)
+
+        # Case 2: single list of experiences
+        elif isinstance(buffer_or_dict, list):
+            print(f"Training on {len(buffer_or_dict)} samples")
+            self._train_on_list(buffer_or_dict)
+
+    def _train_on_list(self, buffer):
         for obs, action, reward, next_obs, done in buffer:
             s = self._obs_to_tensor(obs)
             a = self.action_encoder.encode(action)
@@ -123,11 +139,15 @@ class NeuralQLearningPolicy:
                 target += self.gamma * q_next
 
             pred = self.q_net(s)[a]
-            loss = self.loss_fn(pred, torch.tensor(target))
+            target_tensor = torch.tensor([target], dtype=torch.float32)
+
+            loss = self.loss_fn(pred.unsqueeze(0), target_tensor)
 
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
+
+
 
     def save_experience(self, path="rl_experience.pkl"):
         with open(path, "wb") as f:
@@ -142,17 +162,14 @@ class NeuralQLearningPolicy:
 
 
 class ActionEncoder:
-    def __init__(self):
-        self.action_to_id = {}
-        self.id_to_action = {}
-        self.num_actions = 0
+    def __init__(self, actions):
+        self.actions = actions
+        self.action_to_id = {a: i for i, a in enumerate(actions)}
+        self.id_to_action = {i: a for i, a in enumerate(actions)}
+        self.num_actions = len(actions)
 
     def encode(self, action):
-        if action not in self.action_to_id:
-            self.action_to_id[action] = self.num_actions
-            self.id_to_action[self.num_actions] = action
-            self.num_actions += 1
         return self.action_to_id[action]
 
-    def decode(self, idx):
-        return self.id_to_action[idx]
+    def decode(self, id):
+        return self.id_to_action[id]

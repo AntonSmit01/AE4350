@@ -46,9 +46,3 @@ class Deck:
         return hands
 
 
-#deck = Deck()
-#deck.shuffle()
-#hands = deck.deal()
-#for i, hand in enumerate(hands):
-#    print(f"Player {i+1}'s hand: {hand}")
-

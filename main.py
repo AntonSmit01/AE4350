@@ -9,8 +9,8 @@ from policies import NeuralQLearningPolicy, ActionEncoder
 import time
 import pickle
 
-encoder = ActionEncoder()
-policy = NeuralQLearningPolicy(action_encoder=encoder)
+#encoder = ActionEncoder()
+policy = NeuralQLearningPolicy(ActionEncoder(["yes", "no"]))
 
 # Create players
 # RLPlayer as Player A
@@ -23,12 +23,42 @@ player_d = Player("Player D")
 
 players = [player_a, player_b, player_c, player_d]
 
+strategy_b = {
+    "opening": "low_first",
+    "vuile_was": "no_bluff",
+    "toep": "never_toep",
+    "fold": "never_fold",
+    "check": "always_check"
+}
+
+strategy_c = {
+    "opening": "high_first",
+    "vuile_was": "bluff_with_3_figures_and_8",
+    "toep": "10_and_9_or_higher",
+    "fold": "2_cards_below_K",
+    "check": "always_check"
+}
+
+strategy_d = {
+    "opening": "high_same_suit_first",
+    "vuile_was": "no_bluff",
+    "toep": "sure_win",
+    "fold": "1_card_below_K",
+    "check": "never_check"
+}
+
+# Determine amount of games that is played
+n = 5
+game_number = 0
+
+# Assign strategies to B, C, D
+players[1].assign_strategy(strategy_b)
+players[2].assign_strategy(strategy_c)
+players[3].assign_strategy(strategy_d)
+
 # Assign and print strategies (except Player A)
 print("\n--- Strategy Profiles ---")
 for player in players[1:]:  # Skip Player A for learning
-    player.strategies = generate_random_strategy_profile()
-    #player.strategies["vuile_was"] = "bluff_with_3_figures_and_8"
-    #player.strategies["check"] = "always_check"
     print(f"{player.name}'s Strategy:")
     for key, value in player.strategies.items():
         print(f"  {key}: {value}")
@@ -40,7 +70,7 @@ input("Press enter to continue.")
 players[0].strategies = {}  # Leave empty or fill with RL placeholder if needed
 
 if isinstance(players[0], RLPlayer):
-    players[0].model.load_experience("experience.pkl")
+    players[0].model.load_experience("rl_experience.pkl")
 
 previous_round_winner = None
 
@@ -60,9 +90,9 @@ while True:
     # TRAIN RL PLAYER HERE
     for player in players:
         if isinstance(player, RLPlayer):
-            print(f"📚 Training {player.name} in round...")
-            player.model.train_from_buffer(player.experience_buffer)
-            player.experience_buffer.clear()
+            print(f"Training {player.name} in round...")
+            player.model.train_from_buffer(player.experience_buffers)
+            player.experience_buffers.clear()
 
     if round_instance.check_for_game_end():
         print(" Game over!")
@@ -78,10 +108,12 @@ while True:
                 print(f" {player.name} - Games: {player.games_played}, Wins: {player.wins}, Losses: {player.losses}")
 
                 # Train
-                player.model.train_from_buffer(player.experience_buffer)
-                player.experience_buffer.clear()
+                player.model.train_from_buffer(player.experience_buffers)
+                player.experience_buffers.clear()
                 player.model.save_experience("rl_experience.pkl")
-
+        
+#        game_number += 1
+#        if game_number == n:
         break
 
 
