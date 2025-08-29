@@ -2,6 +2,7 @@ import time
 from strategies import check_strategy
 from player import RLPlayer
 from policies import MyPolicy
+from rewards import calculate_phase_reward
 
 #players = [
 #    RLPlayer("Bot1", model=MyPolicy()),
@@ -116,31 +117,34 @@ class Round:
 
     def apply_end_of_round_scoring(self):
         for player in self.active_players:
-            reward = 0
             if player.has_folded:
                 folded_value = player.folded_at_value or self.round_value
                 player.points += folded_value
                 print(f"{player.name} folded and gets {folded_value} points, now has {player.points}.")
-                reward = -2
+                outcome_reward = -2
             elif player != self.trick_winner:
                 player.points += self.round_value
                 print(f"{player.name} loses round and gets {self.round_value} points, now has {player.points}.")
-                reward = -1
+                outcome_reward = -1
             else:
                 print(f"{player.name} wins the round and gets 0 points, now has {player.points}.")
-                reward = 2
+                outcome_reward = 2
 
-            # Deliver reward if RLPlayer
             if isinstance(player, RLPlayer):
                 done = player.points >= 15
-                player.receive_reward(reward, done)
+                # Final outcome reward
+                player.receive_reward(outcome_reward, done)
 
-                # Train ONCE at end of round with all experiences
+                # Train each head on its own buffer
                 print(f"Training {player.name} on all phases...")
-                player.card_model.train_from_buffer(player.experience_buffers)
+                player.card_model.train_from_buffer(player.experience_buffers["play_card"])
+                player.vw_model.train_from_buffer(player.experience_buffers["vuile_was"])
+                player.fold_model.train_from_buffer(player.experience_buffers["fold"])
+                player.toep_model.train_from_buffer(player.experience_buffers["toep"])
 
-                # Clear for next round
+                # Now clear episodic data and flags (weights are kept!)
                 player.reset_for_new_round()
+
 
 
 
@@ -196,6 +200,8 @@ class Round:
     def handle_vuile_was_phase(self):
         # Reset RL player(s) for a fresh round
         for player in self.players:
+            player.checked_vuile_was = False
+            player.vuile_was_target = None
             if player.is_learning:   # mark Player A with is_learning=True
                 player.reset_for_new_round()
 
@@ -234,8 +240,11 @@ class Round:
                     print(f"{p.name} checks {caller.name}'s vuile was declaration...")
                     time.sleep(1)
 
+                    # ✅ Mark that this player made a check
+                    p.checked_vuile_was = True
+                    p.vuile_was_target = caller
+
                     if is_real:
-                        #print(f"{caller.name} had a valid Vuile Was.")
                         successful_checks.append(p)
                     else:
                         print(f"{caller.name} **bluffed!**")
@@ -274,34 +283,3 @@ class Round:
         print("\n=== End of Vuile Was Phase ===\n")
         time.sleep(1)
         return True
-
-
-
-
-def calculate_phase_reward(phase, player, round_winner):
-    if phase == "play_card":
-        # Reward for winning the round
-        return 1.0 if player == round_winner else -1.0
-
-    elif phase == "vuile_was":
-        # Bluffing reward: negative if declared and lost, positive if succeeded
-        if player.declared_vuile_was and player == round_winner:
-            return 1.0
-        elif player.declared_vuile_was:
-            return -1.0
-        return 0.0
-
-    elif phase == "fold":
-        # Reward if folded before losing big points
-        if player.has_folded:
-            return -2 if player.points + player.folded_at_value < 15 else -1.0
-        else:
-            return 0.5 if player.points >= 15 else 0.1
-
-    elif phase == "toep":
-        # Reward if toep and win, penalty if toep and lose
-        if player.toep:
-            return 1.0 if player == round_winner else -1.0
-        return 0.0
-
-    return 0.0

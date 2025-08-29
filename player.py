@@ -7,6 +7,7 @@ from strategies import (
     generate_random_strategy_profile
 )
 from policies import NeuralQLearningPolicy, ActionEncoder
+from rewards import calculate_phase_reward
 
 class Player:
     def __init__(self, name):
@@ -106,7 +107,8 @@ class RLPlayer(Player):
     def __init__(self, name="RLPlayer", model=NeuralQLearningPolicy):
         super().__init__(name=name)
         # RL models for each phase
-        self.card_model = NeuralQLearningPolicy(ActionEncoder([0, 1, 2, 3]))
+        full_deck = get_full_deck()
+        self.card_model = NeuralQLearningPolicy(ActionEncoder(full_deck))
         self.vw_model = NeuralQLearningPolicy(ActionEncoder([0, 1]))  # 0=no, 1=yes
         self.toep_model = NeuralQLearningPolicy(ActionEncoder([0, 1]))  # 0=no, 1=yes
         self.fold_model = NeuralQLearningPolicy(ActionEncoder([0, 1]))  # 0=no, 1=yes
@@ -126,6 +128,7 @@ class RLPlayer(Player):
         self.games_played = 0
         self.declared_vuile_was = False  # ensure attribute exists
         self.is_learning = True
+        self.consecutive_folds = 0
 
     # --- Observation ---
     def get_observation(self, phase, context):
@@ -147,48 +150,87 @@ class RLPlayer(Player):
             "num_other_players": len(players) - 1 if players else 3
         }
 
-    # --- Vuile Was ---
+    # --- Vuile Was phase ---
     def declare_vuile_was(self, context=None):
         obs = self.get_observation("vuile_was_declaration", context or {})
-        action_index = self.vw_model.predict(obs, [0, 1])  # 0=no, 1=yes
-        self.experience_buffers["vuile_was"].append((obs, action_index, 0, None, False))
-        self.last_obs = obs
-        self.last_action = action_index
-        self.declared_vuile_was = action_index == 1
-        return self.declared_vuile_was
+        action = self.vw_model.predict(obs, [0, 1])
+        decision = (action == 1)
+
+        # Track flag so rewards and round logic can read it
+        self.declared_vuile_was = decision
+
+        # Save experience (action can be the string; encoder will map it)
+        self.experience_buffers["vuile_was"].append((obs, action, 0.0, None, False))
+
+        # Immediate shaping reward
+        self.receive_reward(calculate_phase_reward("vuile_was", self, None), done=False)
+
+        return decision
+
 
     # --- Card play ---
     def play_card(self, lead_suit=None, context=None):
         obs = self.get_observation("play_card", context or {})
         legal_cards = self.get_legal_cards(lead_suit)
+        self.consecutive_folds = 0
         if not legal_cards:
             return None
 
-        # Use indices for RL
-        action_index = self.card_model.predict(obs, list(range(len(legal_cards))))
-        chosen_card = legal_cards[action_index]
+        # Represent legal actions as strings matching your ActionEncoder
+        legal_card_strings = [str(c) for c in legal_cards]
+        chosen_str = self.card_model.predict(obs, legal_card_strings)
 
-        self.experience_buffers["play_card"].append((obs, action_index, 0, None, False))
-        self.last_obs = obs
-        self.last_action = action_index
+        # Map back to actual Card
+        chosen = next(c for c in legal_cards if str(c) == chosen_str)
 
-        self.hand.remove(chosen_card)
-        print(f"{self.name} plays {chosen_card}")
-        return chosen_card
+        # Save experience
+        self.experience_buffers["play_card"].append((obs, chosen_str, 0.0, None, False))
 
-    # --- Fold ---
+        # Shaping reward for playing
+        self.receive_reward(calculate_phase_reward("play_card", self, None), done=False)
+
+        # Play the card
+        self.hand.remove(chosen)
+        print(f"{self.name} plays {chosen}")
+        return chosen
+
+    # --- Fold decision ---
     def should_fold(self, round_value, current_player=None):
-        obs = self.get_observation("fold", {"round_value": round_value})
-        action_index = self.fold_model.predict(obs, [0, 1])
-        self.experience_buffers["fold"].append((obs, action_index, 0, None, False))
-        return action_index == 1
+        obs = self.get_observation("fold", {})
+        
+        # Check if already folded twice in a row → cannot fold again
+        if self.consecutive_folds >= 2:
+            fold = False
+        else:
+            action = self.fold_model.predict(obs, [0, 1])
+            fold = (action == 1)
 
-    # --- Toep ---
+        if fold:
+            self.has_folded = True
+            self.folded_at_value = round_value
+            self.consecutive_folds += 1
+        else:
+            # If the player chooses to play instead of folding → reset streak
+            self.consecutive_folds = 0
+
+        # Log experience
+        self.experience_buffers["fold"].append((obs, int(fold), 0.0, None, False))
+        self.receive_reward(calculate_phase_reward("fold", self, None), done=False)
+
+        return fold
+
+
+
+    # --- Toep decision ---
     def should_toep(self, round_value):
-        obs = self.get_observation("toep", {"round_value": round_value})
-        action_index = self.toep_model.predict(obs, [0, 1])
-        self.experience_buffers["toep"].append((obs, action_index, 0, None, False))
-        return action_index == 1
+        obs = self.get_observation("toep", {})
+        action = self.toep_model.predict(obs, [0, 1])
+        self.toeped = (action == 1)
+
+        self.experience_buffers["toep"].append((obs, action, 0.0, None, False))
+        self.receive_reward(calculate_phase_reward("toep", self, None), done=False)
+        return self.toeped
+
     
     # --- Vuile was Check ---
     def decide_check(self, obs, context=None):
@@ -220,8 +262,33 @@ class RLPlayer(Player):
         matching = [c for c in self.hand if c.suit == lead_suit]
         return matching if matching else self.hand.copy()
 
+#    def reset_for_new_round(self):
+#        """Clear stored experiences for the new round."""
+#        self.experience_buffers = {
+#            "play_card": [],
+#            "vuile_was": [],
+#            "fold": [],
+#            "toep": [],
+#            "check": []
+#        }
+#       self.last_obs = None
+#        self.last_action = None
+
+    # --- Utility: reset between rounds but keep learned weights ---
     def reset_for_new_round(self):
-        """Clear stored experiences for the new round."""
+        # Clear episodic buffers (we trained on them at end of round)
+        for k in self.experience_buffers.keys():
+            self.experience_buffers[k].clear()
+
+        # Clear transient flags
+        self.last_obs = None
+        self.last_action = None
+        self.has_folded = False
+        self.folded_at_value = None
+        self.declared_vuile_was = False
+        self.toeped = False
+
+        # Create new buffers:
         self.experience_buffers = {
             "play_card": [],
             "vuile_was": [],
@@ -229,5 +296,13 @@ class RLPlayer(Player):
             "toep": [],
             "check": []
         }
-        self.last_obs = None
-        self.last_action = None
+
+        loaded = self.card_model.load_experience()
+        if loaded:
+            self.experience_buffers = loaded
+
+
+def get_full_deck():
+    suits = ["hearts", "diamonds", "clubs", "spades"]
+    ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+    return [f"{rank} of {suit}" for suit in suits for rank in ranks]

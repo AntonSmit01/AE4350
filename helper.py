@@ -18,3 +18,5 @@ def create_players(amount_of_players):
 
     print(f"Created players: {[p.name for p in players]}")
     return players
+
+

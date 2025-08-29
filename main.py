@@ -7,7 +7,6 @@ from strategies import generate_random_strategy_profile
 from player import Player, RLPlayer
 from policies import NeuralQLearningPolicy, ActionEncoder
 import time
-import pickle
 
 #encoder = ActionEncoder()
 policy = NeuralQLearningPolicy(ActionEncoder(["yes", "no"]))

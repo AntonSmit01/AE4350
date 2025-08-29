@@ -147,18 +147,17 @@ class NeuralQLearningPolicy:
             loss.backward()
             self.optimizer.step()
 
-
-
-    def save_experience(self, path="rl_experience.pkl"):
+    def save_experience(self, buffers, path="rl_experience.pkl"):
         with open(path, "wb") as f:
-            pickle.dump(self.memory, f)
+            pickle.dump(buffers, f)
 
     def load_experience(self, path="rl_experience.pkl"):
         try:
             with open(path, "rb") as f:
-                self.memory = pickle.load(f)
+                return pickle.load(f)
         except FileNotFoundError:
             print("No saved experience.")
+            return None
 
 
 class ActionEncoder:
