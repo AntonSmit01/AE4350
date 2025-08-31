@@ -8,7 +8,6 @@ from player import Player, RLPlayer
 from policies import NeuralQLearningPolicy, ActionEncoder
 import time
 
-#encoder = ActionEncoder()
 policy = NeuralQLearningPolicy(ActionEncoder(["yes", "no"]))
 
 # Create players
@@ -46,7 +45,7 @@ strategy_d = {
     "check": "never_check"
 }
 
-# Determine amount of games that is played
+# Determine amount of games that is played, not included in the final project
 n = 5
 game_number = 0
 
@@ -65,8 +64,8 @@ for player in players[1:]:  # Skip Player A for learning
 
 input("Press enter to continue.")
 
-# Player A gets a blank strategy (or learning hook)
-players[0].strategies = {}  # Leave empty or fill with RL placeholder if needed
+# Player A gets a blank strategy
+players[0].strategies = {}  # Leave empty 
 
 if isinstance(players[0], RLPlayer):
     players[0].model.load_experience("rl_experience.pkl")
@@ -83,34 +82,39 @@ while True:
 
     for _ in range(4):  # Each round has 4 tricks
         winner = round_instance.play_trick()
-
+    
     round_instance.apply_end_of_round_scoring()
 
     # TRAIN RL PLAYER HERE
     for player in players:
         if isinstance(player, RLPlayer):
-            print(f"Training {player.name} in round...")
-            player.model.train_from_buffer(player.experience_buffers)
-            player.experience_buffers.clear()
+            print(f"Training {player.name} with {sum(len(v) for v in player.experience_buffers.values())} transitions")
 
+            # Push episodic buffers into long-term memory
+            for buf in player.experience_buffers.values():
+                for exp in buf:
+                    player.card_model.store_transition(exp)   # store into replay buffer
+
+            # Train from replay buffer
+            player.card_model.train_from_buffer(player.experience_buffers)
+            player.save_progress()
+
+            # Clear episodic buffers only (not the replay buffer!)
+            for k in player.experience_buffers.keys():
+                player.experience_buffers[k].clear()
+                
     if round_instance.check_for_game_end():
-        print(" Game over!")
-    
-        for player in players:
-            if isinstance(player, RLPlayer):
-                player.games_played += 1
-                if player.points < 15:
-                    player.wins += 1
-                else:
-                    player.losses += 1
-
+        print(" Game over!") 
+        for player in players: 
+            if isinstance(player, RLPlayer): 
+                player.games_played += 1 
+                if player.points < 15: 
+                    player.wins += 1 
+                else: 
+                    player.losses += 1 
                 print(f" {player.name} - Games: {player.games_played}, Wins: {player.wins}, Losses: {player.losses}")
+                player.save_progress()
 
-                # Train
-                player.model.train_from_buffer(player.experience_buffers)
-                player.experience_buffers.clear()
-                player.model.save_experience("rl_experience.pkl")
-        
 #        game_number += 1
 #        if game_number == n:
         break

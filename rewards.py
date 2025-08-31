@@ -45,7 +45,7 @@ def calculate_phase_reward(phase, player, round_winner=None):
                     # Player checked a real vuile was → bad check
                     return -1.0
                 elif target.declared_vuile_was and not target.has_real_vuile_was():
-                    # ✅ Player caught a bluff
+                    # Player caught a bluff
                     return 1.0
             # Checked but no target info (edge case) → neutral
             return 0.0

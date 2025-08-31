@@ -23,7 +23,7 @@ class DebugPolicy:
         self.memory.extend(buffer)  # Optional: store all experiences
 
         for obs, action, reward, _, _ in buffer:
-            print("→", obs["phase"], "| Action:", action, "| Reward:", reward)
+            print("->", obs["phase"], "| Action:", action, "| Reward:", reward)
 
     def save_experience(self, path="rl_experience.pkl"):
         with open(path, "wb") as f:
@@ -118,7 +118,7 @@ class NeuralQLearningPolicy:
         # Case 1: dict of phase buffers
         if isinstance(buffer_or_dict, dict):
             for phase, buf in buffer_or_dict.items():
-                print(f"Training on phase {phase} with {len(buf)} samples")
+                #print(f"Training on phase {phase} with {len(buf)} samples")
                 self._train_on_list(buf)
 
         # Case 2: single list of experiences
@@ -147,17 +147,42 @@ class NeuralQLearningPolicy:
             loss.backward()
             self.optimizer.step()
 
+    # Saving all buffers at once
     def save_experience(self, buffers, path="rl_experience.pkl"):
         with open(path, "wb") as f:
+            # Always save a dict
             pickle.dump(buffers, f)
 
+    # Loading returns a dict, and fallback to empty dict if something went wrong
     def load_experience(self, path="rl_experience.pkl"):
         try:
-            with open(path, "rb") as f:
-                return pickle.load(f)
+            data = pickle.load(open(path, "rb"))
+            # if not isinstance(data, dict):
+            #     print("Loaded experience is not a dict! Returning empty buffers.")
+            #     return {
+            #         "play_card": [],
+            #         "vuile_was": [],
+            #         "fold": [],
+            #         "toep": [],
+            #         "check": []
+            #     }
+            return data
         except FileNotFoundError:
             print("No saved experience.")
-            return None
+            return {
+                "play_card": [],
+                "vuile_was": [],
+                "fold": [],
+                "toep": [],
+                "check": []
+            }
+        
+    def store_transition(self, exp):
+        self.memory.append(exp)
+        if len(self.memory) > self.memory_size:
+            self.memory.pop(0)
+
+
 
 
 class ActionEncoder:

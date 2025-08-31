@@ -19,10 +19,10 @@ class Player:
         self.has_folded = False     # Check if player has folded
         self.play_open = False      # Check if player start with open cards
         self.strategies = {}        # Used strategy
-        self.folded_at_value = None
-        self.declared_vuile_was = False
-        self.toeped = False
-        self.is_learning = False
+        self.folded_at_value = None # Check at which points is folded
+        self.declared_vuile_was = False # Check if player has declared vuile was
+        self.toeped = False         # Check if player toeped
+        self.is_learning = False    # Check if player is RL
 
     def receive_hand(self, cards):
         self.hand = cards
@@ -95,7 +95,7 @@ class Player:
         figures = [card for card in self.hand if card.rank['rank'] in figure_values]
         sevens = [card for card in self.hand if card.rank['rank'] == "7"]
         eights = [card for card in self.hand if card.rank['rank'] == "8"]
-        return (len(figures) == 4) or (len(figures) == 3 and len(sevens) == 1) #or (len(figures) == 3 and len(eights) == 1) or (len(figures) == 2 and len(sevens) == 1 and len(eights) == 1)
+        return (len(figures) == 4) or (len(figures) == 3 and len(sevens) == 1) 
 
     def declare_vuile_was(self):
         decide = vuile_was_strategy(self)
@@ -126,9 +126,15 @@ class RLPlayer(Player):
         self.wins = 0
         self.losses = 0
         self.games_played = 0
-        self.declared_vuile_was = False  # ensure attribute exists
+        self.declared_vuile_was = False  
         self.is_learning = True
-        self.consecutive_folds = 0
+        self.consecutive_folds = 0 # Check amount of consecutive folds, should never exceed 2
+        self.exp_path = "rl_experience.pkl"
+
+        # Try to load past experience
+        loaded = self.card_model.load_experience(self.exp_path)
+        if loaded is not None:
+            self.card_model.memory = loaded
 
     # --- Observation ---
     def get_observation(self, phase, context):
@@ -159,7 +165,7 @@ class RLPlayer(Player):
         # Track flag so rewards and round logic can read it
         self.declared_vuile_was = decision
 
-        # Save experience (action can be the string; encoder will map it)
+        # Save experience
         self.experience_buffers["vuile_was"].append((obs, action, 0.0, None, False))
 
         # Immediate shaping reward
@@ -176,7 +182,6 @@ class RLPlayer(Player):
         if not legal_cards:
             return None
 
-        # Represent legal actions as strings matching your ActionEncoder
         legal_card_strings = [str(c) for c in legal_cards]
         chosen_str = self.card_model.predict(obs, legal_card_strings)
 
@@ -198,7 +203,7 @@ class RLPlayer(Player):
     def should_fold(self, round_value, current_player=None):
         obs = self.get_observation("fold", {})
         
-        # Check if already folded twice in a row → cannot fold again
+        # Check if already folded twice in a row -> cannot fold again
         if self.consecutive_folds >= 2:
             fold = False
         else:
@@ -210,7 +215,7 @@ class RLPlayer(Player):
             self.folded_at_value = round_value
             self.consecutive_folds += 1
         else:
-            # If the player chooses to play instead of folding → reset streak
+            # If the player chooses to play instead of folding -> reset streak
             self.consecutive_folds = 0
 
         # Log experience
@@ -237,7 +242,7 @@ class RLPlayer(Player):
         action_space = ["check", "no_check"]
         action_index = self.check_model.predict(obs, action_space)
 
-        # Store the experience (obs, action, reward, next_obs, done)
+        # Store the experience
         self.experience_buffers["check"].append((obs, action_space[action_index], 0, None, False))
 
         self.last_obs = obs
@@ -262,23 +267,24 @@ class RLPlayer(Player):
         matching = [c for c in self.hand if c.suit == lead_suit]
         return matching if matching else self.hand.copy()
 
-#    def reset_for_new_round(self):
-#        """Clear stored experiences for the new round."""
-#        self.experience_buffers = {
-#            "play_card": [],
-#            "vuile_was": [],
-#            "fold": [],
-#            "toep": [],
-#            "check": []
-#        }
-#       self.last_obs = None
-#        self.last_action = None
+    def save_experience(self):
+        """Delegate saving to one of the models."""
+        self.card_model.save_experience(self.card_model.memory, self.exp_path)
 
-    # --- Utility: reset between rounds but keep learned weights ---
+    # --- Reset between rounds but keep learned weights ---
     def reset_for_new_round(self):
-        # Clear episodic buffers (we trained on them at end of round)
-        for k in self.experience_buffers.keys():
-            self.experience_buffers[k].clear()
+#        if not isinstance(self.experience_buffers, dict):
+#            print("Warning: experience_buffers is not a dict! Reinitializing.")
+#            self.experience_buffers = {
+#                "play_card": [],
+#                "vuile_was": [],
+            #     "fold": [],
+            #     "toep": [],
+            #     "check": []
+            # }
+
+        #for k in self.experience_buffers.keys():
+        #    self.experience_buffers[k].clear()
 
         # Clear transient flags
         self.last_obs = None
@@ -289,17 +295,23 @@ class RLPlayer(Player):
         self.toeped = False
 
         # Create new buffers:
-        self.experience_buffers = {
-            "play_card": [],
-            "vuile_was": [],
-            "fold": [],
-            "toep": [],
-            "check": []
-        }
+        # self.experience_buffers = {
+        #     "play_card": [],
+        #     "vuile_was": [],
+        #     "fold": [],
+        #     "toep": [],
+        #     "check": []
+        # }
 
         loaded = self.card_model.load_experience()
         if loaded:
             self.experience_buffers = loaded
+
+    def save_progress(self):
+        NeuralQLearningPolicy.save_experience(self=self, buffers=self.experience_buffers, path=self.exp_path)
+        print(f"[DEBUG] Saved {self.card_model.memory} experiences to {self.exp_path}")
+        print(f"[RLPlayer] Saved experience to {self.exp_path}")
+
 
 
 def get_full_deck():

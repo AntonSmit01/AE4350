@@ -4,13 +4,6 @@ from player import RLPlayer
 from policies import MyPolicy
 from rewards import calculate_phase_reward
 
-#players = [
-#    RLPlayer("Bot1", model=MyPolicy()),
-#    RLPlayer("Bot2", model=MyPolicy()),
-#  RLPlayer("Bot3", model=MyPolicy()),
-#  RLPlayer("Bot4", model=MyPolicy()),
-#]
-
 class Round:
     def __init__(self, players, deck, previous_round_winner=None):
         self.players = [p for p in players if p.in_game]
@@ -91,7 +84,7 @@ class Round:
 
         # SAFETY CHECK — no cards played
         if not played_cards:
-            print("⚠️ No cards were played this trick (all remaining players folded).")
+            print("No cards were played this trick (all remaining players folded).")
             self.trick_winner = None
             return None
 
@@ -102,7 +95,7 @@ class Round:
         if valid_cards:
             winner = max(valid_cards, key=lambda x: x[1].value)
             self.trick_winner = winner[0]
-            print(f"🏆 {self.trick_winner.name} wins the trick!")
+            print(f"{self.trick_winner.name} wins the trick!")
         else:
             self.trick_winner = None
 
@@ -161,7 +154,7 @@ class Round:
 
             if player.should_toep(self.round_value):
                 self.round_value += 1
-                print(f"{player.name} says TOEP! ➜ Round is now worth {self.round_value} points.")
+                print(f"{player.name} says TOEP! -> Round is now worth {self.round_value} points.")
                 time.sleep(0.5)
 
             if player.should_fold(self.round_value):
@@ -240,7 +233,7 @@ class Round:
                     print(f"{p.name} checks {caller.name}'s vuile was declaration...")
                     time.sleep(1)
 
-                    # ✅ Mark that this player made a check
+                    # Mark that this player made a check
                     p.checked_vuile_was = True
                     p.vuile_was_target = caller
 
