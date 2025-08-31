@@ -28,6 +28,6 @@ round.py initiates the round of the game that is played, including all phases.
 strategies.py has all pre-set strategies for the non-learning players.
 
 
-How to play:
+--- How to play ---
 
 Go to main.py and run it. This should give you the game. You can adapt various features about the strategies of player B,C,D in main.py as well, you can look in strategies.py if you want different strategies.
